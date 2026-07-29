@@ -43,6 +43,7 @@ formulario_ult AS (
         ORDER BY COALESCE(fc.ts_alta_audit, '1900-01-01 00:00:00') DESC, fc.id DESC
       ) AS rn
     FROM FormularioCaptura fc
+    WHERE fc.dpi = %s
   ) x WHERE rn = 1
 ),
 konan_ult AS (
@@ -169,6 +170,7 @@ LEFT JOIN formulario_ult fc ON fc.idFlujo = f.id
 LEFT JOIN buro_pivot     bp ON bp.idFlujo = f.id
 LEFT JOIN konan_ult      bk ON bk.idFlujo = f.id
 LEFT JOIN orig_info      oi ON oi.buro_flujo_id = f.id
+WHERE fc.dpi = %s
 ORDER BY f.id DESC
 """
 
@@ -589,19 +591,14 @@ def consultar():
     try:
         conn   = pymysql.connect(**DB_CONFIG)
         cursor = conn.cursor(pymysql.cursors.DictCursor)
-        cursor.execute(QUERY)
+        cursor.execute(QUERY, (dpi, dpi))
         rows = cursor.fetchall()
         cursor.close()
         conn.close()
     except Exception as e:
         return jsonify({"error": f"Error de conexión: {str(e)}"}), 500
 
-    encontrados = []
-    for row in rows:
-        fj = safe_json(row.get("formulario_json"))
-        dpi_row = str(fj.get("dpi") or row.get("formulario_dpi") or "").strip()
-        if dpi_row == dpi:
-            encontrados.append(row)
+    encontrados = list(rows)
 
     if not encontrados:
         return jsonify({"error": f"No se encontró ningún registro con DPI: {dpi}"}), 404

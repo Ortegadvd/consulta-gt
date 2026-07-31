@@ -82,73 +82,16 @@ buro_pivot AS (
     MAX(CASE WHEN br.categoria_buro = 'Buro_164_localizador' AND br.rn = 1 THEN br.consultaExitosa END) AS buro164_consultaExitosa
   FROM buro_ranked br
   GROUP BY br.idFlujo
-),
-orig_via_unykoo AS (
-  SELECT
-    cb.idUnykoo AS buro_flujo_id,
-    of2.fechaCreacion AS flujo_fechaCreacion,
-    cb.fechaHora AS buro_fechaHora,
-    CONCAT(usr.primer_nombre, IFNULL(CONCAT(' ', usr.segundo_nombre), ''), ' ', usr.apellido_paterno,
-           IFNULL(CONCAT(' ', usr.apellido_materno), '')) AS nombre_usuario_creacion,
-    suc.nombre  AS nombre_sucursal_consulta,
-    dist.nombre AS nombre_distribuidor_consulta
-  FROM `originador-dev`.consulta_buro cb
-  JOIN `originador-dev`.originacion_consulta_buro ocb ON ocb.idConsultaBuro = cb.id
-  JOIN `originador-dev`.originacion_flujo         of2 ON of2.id             = ocb.idOriginacionFlujo
-  JOIN `maxi-prod`.usuario    usr  ON of2.fk_usuario_creacion = usr.pk_usuario
-  JOIN `maxi-prod`.sucursal   suc  ON usr.fk_sucursal         = suc.pk_sucursal
-  JOIN `maxi-prod`.distribuidor dist ON suc.fk_distribuidor   = dist.pk_distribuidor
-  WHERE cb.idUnykoo IS NOT NULL
-),
-orig_via_dpi AS (
-  SELECT * FROM (
-    SELECT
-      bfc.idFlujo AS buro_flujo_id,
-      of2.fechaCreacion AS flujo_fechaCreacion,
-      bu_d.fechaHora AS buro_fechaHora,
-      CONCAT(usr.primer_nombre, IFNULL(CONCAT(' ', usr.segundo_nombre), ''), ' ', usr.apellido_paterno,
-             IFNULL(CONCAT(' ', usr.apellido_materno), '')) AS nombre_usuario_creacion,
-      suc.nombre  AS nombre_sucursal_consulta,
-      dist.nombre AS nombre_distribuidor_consulta,
-      ROW_NUMBER() OVER (
-        PARTITION BY bfc.idFlujo
-        ORDER BY ABS(TIMESTAMPDIFF(SECOND,
-          COALESCE(bfc.ts_alta_audit, '1900-01-01'),
-          COALESCE(ofc.fechaHora,     '1900-01-01')
-        ))
-      ) AS rn
-    FROM `buro-credito-prod`.FormularioCaptura bfc
-    JOIN `originador-dev`.originacion_formulario_captura ofc
-         ON JSON_UNQUOTE(JSON_EXTRACT(ofc.formularioCapturaJson, '$.docIdent')) = bfc.dpi
-    JOIN `originador-dev`.originacion_flujo of2
-         ON of2.idOriginacionFormularioCaptura = ofc.id
-         AND of2.fk_usuario_creacion IS NOT NULL
-    LEFT JOIN `originador-dev`.originacion_consulta_buro ocb_d ON ocb_d.id = of2.idOriginacionConsultaBuro
-    LEFT JOIN `originador-dev`.consulta_buro              bu_d ON bu_d.id  = ocb_d.idConsultaBuro
-    JOIN `maxi-prod`.usuario    usr  ON of2.fk_usuario_creacion = usr.pk_usuario
-    JOIN `maxi-prod`.sucursal   suc  ON usr.fk_sucursal         = suc.pk_sucursal
-    JOIN `maxi-prod`.distribuidor dist ON suc.fk_distribuidor   = dist.pk_distribuidor
-    WHERE bfc.idFlujo NOT IN (SELECT buro_flujo_id FROM orig_via_unykoo)
-  ) x WHERE rn = 1
-),
-orig_info AS (
-  SELECT buro_flujo_id, flujo_fechaCreacion, buro_fechaHora,
-         nombre_usuario_creacion, nombre_sucursal_consulta, nombre_distribuidor_consulta
-  FROM orig_via_unykoo
-  UNION ALL
-  SELECT buro_flujo_id, flujo_fechaCreacion, buro_fechaHora,
-         nombre_usuario_creacion, nombre_sucursal_consulta, nombre_distribuidor_consulta
-  FROM orig_via_dpi
 )
 SELECT
   f.id AS flujo_id,
   f.estatus AS flujo_estatus,
   COALESCE(f.mensaje, f.reglasAplicadas) AS flujo_dictamen,
-  oi.flujo_fechaCreacion,
-  oi.buro_fechaHora,
-  oi.nombre_usuario_creacion,
-  oi.nombre_sucursal_consulta,
-  oi.nombre_distribuidor_consulta,
+  NULL AS flujo_fechaCreacion,
+  NULL AS buro_fechaHora,
+  NULL AS nombre_usuario_creacion,
+  NULL AS nombre_sucursal_consulta,
+  NULL AS nombre_distribuidor_consulta,
   fc.dpi AS formulario_dpi,
   CONCAT(fc.primerNombre, IFNULL(CONCAT(' ', fc.segundoNombre), ''), ' ', fc.apellidoPaterno,
          IFNULL(CONCAT(' ', fc.apellidoMaterno), '')) AS formulario_NombreCompleto,
@@ -169,7 +112,6 @@ FROM flujos f
 LEFT JOIN formulario_ult fc ON fc.idFlujo = f.id
 LEFT JOIN buro_pivot     bp ON bp.idFlujo = f.id
 LEFT JOIN konan_ult      bk ON bk.idFlujo = f.id
-LEFT JOIN orig_info      oi ON oi.buro_flujo_id = f.id
 WHERE fc.dpi = %s
 ORDER BY f.id DESC
 """
